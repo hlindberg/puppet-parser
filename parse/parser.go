@@ -21,6 +21,7 @@ import (
 var validateOnly = flag.Bool("v", false, "validate only")
 var jsonOuput = flag.Bool("j", false, "json output")
 var strict = flag.String("s", `off`, "strict (off, warning, or error)")
+var actors = flag.Bool("a", false, "actors")
 var tasks = flag.Bool("t", false, "tasks")
 
 func main() {
@@ -49,6 +50,9 @@ func main() {
 	parseOpts := []parser.Option{}
 	if strings.HasSuffix(fileName, `.epp`) {
 		parseOpts = append(parseOpts, parser.PARSER_EPP_MODE)
+	}
+	if *actors {
+		parseOpts = append(parseOpts, parser.PARSER_ACTORS_ENABLED)
 	}
 	if *tasks {
 		parseOpts = append(parseOpts, parser.PARSER_TASKS_ENABLED)

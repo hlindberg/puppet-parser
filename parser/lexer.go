@@ -127,29 +127,31 @@ const (
 	TOKEN_TYPE_NAME           = 159
 
 	// Keywords
-	TOKEN_AND         = 200
-	TOKEN_APPLICATION = 201
-	TOKEN_ATTR        = 202
-	TOKEN_CASE        = 203
-	TOKEN_CLASS       = 204
-	TOKEN_CONSUMES    = 205
-	TOKEN_DEFAULT     = 206
-	TOKEN_DEFINE      = 207
-	TOKEN_FUNCTION    = 208
-	TOKEN_IF          = 209
-	TOKEN_IN          = 210
-	TOKEN_INHERITS    = 211
-	TOKEN_ELSE        = 212
-	TOKEN_ELSIF       = 213
-	TOKEN_NODE        = 214
-	TOKEN_OR          = 215
-	TOKEN_PLAN        = 216
-	TOKEN_PRIVATE     = 217
-	TOKEN_PRODUCES    = 218
-	TOKEN_SITE        = 219
-	TOKEN_TYPE        = 220
-	TOKEN_UNDEF       = 221
-	TOKEN_UNLESS      = 222
+	TOKEN_ACTION      = 200
+	TOKEN_ACTOR       = 201
+	TOKEN_AND         = 202
+	TOKEN_APPLICATION = 203
+	TOKEN_ATTR        = 204
+	TOKEN_CASE        = 205
+	TOKEN_CLASS       = 206
+	TOKEN_CONSUMES    = 207
+	TOKEN_DEFAULT     = 208
+	TOKEN_DEFINE      = 209
+	TOKEN_FUNCTION    = 210
+	TOKEN_IF          = 211
+	TOKEN_IN          = 212
+	TOKEN_INHERITS    = 213
+	TOKEN_ELSE        = 214
+	TOKEN_ELSIF       = 215
+	TOKEN_NODE        = 216
+	TOKEN_OR          = 217
+	TOKEN_PLAN        = 218
+	TOKEN_PRIVATE     = 219
+	TOKEN_PRODUCES    = 220
+	TOKEN_SITE        = 221
+	TOKEN_TYPE        = 222
+	TOKEN_UNDEF       = 223
+	TOKEN_UNLESS      = 224
 )
 
 func IsKeywordToken(token int) bool {
@@ -248,6 +250,8 @@ var tokenMap = map[int]string{
 	TOKEN_TYPE_NAME:           `type name`,
 
 	// Keywords
+	TOKEN_ACTION:      `action`,
+	TOKEN_ACTOR:       `actor`,
 	TOKEN_AND:         `and`,
 	TOKEN_APPLICATION: `application`,
 	TOKEN_ATTR:        `attr`,
@@ -274,6 +278,8 @@ var tokenMap = map[int]string{
 }
 
 var keywords = map[string]int{
+	tokenMap[TOKEN_ACTION]:      TOKEN_ACTION,
+	tokenMap[TOKEN_ACTOR]:       TOKEN_ACTOR,
 	tokenMap[TOKEN_APPLICATION]: TOKEN_APPLICATION,
 	tokenMap[TOKEN_AND]:         TOKEN_AND,
 	tokenMap[TOKEN_ATTR]:        TOKEN_ATTR,
@@ -311,6 +317,7 @@ type context struct {
 	eppMode               bool
 	handleBacktickStrings bool
 	handleHexEscapes      bool
+	actors                bool
 	tasks                 bool
 	nextLineStart         int
 	currentToken          int
@@ -943,6 +950,14 @@ func (ctx *context) consumeQualifiedName(start int, token int) {
 				return
 			case TOKEN_PLAN:
 				if ctx.tasks {
+					token = kwToken
+				}
+			case TOKEN_ACTION:
+				if ctx.actors {
+					token = kwToken
+				}
+			case TOKEN_ACTOR:
+				if ctx.actors {
 					token = kwToken
 				}
 			default:

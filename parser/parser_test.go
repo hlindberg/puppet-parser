@@ -740,6 +740,20 @@ func TestPlanDefintion(t *testing.T) {
 		`(= (var "a") (qn "plan"))`)
 }
 
+func TestActorDefintion(t *testing.T) {
+	expectDump(t, `actor foo { }`,
+		`(actor {:name "foo" :body []})`, PARSER_ACTORS_ENABLED)
+
+	expectDump(t,
+		Unindent(`
+      actor foo {
+        function first() {}
+        function second() {}
+     }`),
+		`(actor {:name "foo" :body [(function {:name "first" :body []}) (function {:name "second" :body []})]})`,
+		PARSER_ACTORS_ENABLED)
+}
+
 func TestNodeDefinition(t *testing.T) {
 	expectDump(t,
 		Unindent(`

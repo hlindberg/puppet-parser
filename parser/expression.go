@@ -256,6 +256,7 @@ type (
 
 	PlanDefinition struct {
 		FunctionDefinition
+		actor bool
 	}
 
 	HeredocExpression struct {
@@ -1572,8 +1573,16 @@ func (e *ParenthesizedExpression) ToUnaryExpression() UnaryExpression {
 
 func (e *ParenthesizedExpression) ToPN() pn.PN { return pn.Call(`paren`, e.Expr().ToPN()) }
 
+func (e *PlanDefinition) Actor() bool {
+	return e.actor
+}
+
 func (e *PlanDefinition) ToPN() pn.PN {
-	return e.definitionPN(`plan`, ``, e.returnType)
+	n := `plan`
+	if e.actor {
+		n = `actor`
+	}
+	return e.definitionPN(n, ``, e.returnType)
 }
 
 func (e *Program) Definitions() []Definition {

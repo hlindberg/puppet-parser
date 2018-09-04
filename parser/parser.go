@@ -73,8 +73,9 @@ type Option int
 
 const PARSER_HANDLE_BACKTICK_STRINGS = Option(1)
 const PARSER_HANDLE_HEX_ESCAPES = Option(2)
-const PARSER_TASKS_ENABLED = Option(3)
-const PARSER_EPP_MODE = Option(4)
+const PARSER_ACTORS_ENABLED = Option(3)
+const PARSER_TASKS_ENABLED = Option(4)
+const PARSER_EPP_MODE = Option(5)
 
 func NewSimpleLexer(filename string, source string) Lexer {
 	// Essentially a lexer that has no knowledge of interpolations
@@ -84,6 +85,7 @@ func NewSimpleLexer(filename string, source string) Lexer {
 		locator:               &Locator{string: source, file: filename},
 		handleBacktickStrings: false,
 		handleHexEscapes:      false,
+		actors:                false,
 		tasks:                 false}}
 }
 
@@ -127,7 +129,7 @@ func CreatePspecParser() ExpressionParser {
 }
 
 func CreateParser(parserOptions ...Option) ExpressionParser {
-	ctx := &context{factory: DefaultFactory(), handleBacktickStrings: false, handleHexEscapes: false, tasks: false}
+	ctx := &context{factory: DefaultFactory(), handleBacktickStrings: false, handleHexEscapes: false, tasks: false, actors: false}
 	for _, option := range parserOptions {
 		switch option {
 		case PARSER_EPP_MODE:
@@ -138,6 +140,8 @@ func CreateParser(parserOptions ...Option) ExpressionParser {
 			ctx.handleHexEscapes = true
 		case PARSER_TASKS_ENABLED:
 			ctx.tasks = true
+		case PARSER_ACTORS_ENABLED:
+			ctx.actors = true
 		}
 	}
 	return ctx
@@ -386,7 +390,7 @@ func (ctx *context) hashEntry() (expr Expression) {
 
 func (ctx *context) handleKeyword(next func() Expression) (expr Expression) {
 	switch ctx.currentToken {
-	case TOKEN_TYPE, TOKEN_FUNCTION, TOKEN_PLAN, TOKEN_APPLICATION, TOKEN_CONSUMES, TOKEN_PRODUCES, TOKEN_SITE:
+	case TOKEN_TYPE, TOKEN_FUNCTION, TOKEN_PLAN, TOKEN_ACTION, TOKEN_ACTOR, TOKEN_APPLICATION, TOKEN_CONSUMES, TOKEN_PRODUCES, TOKEN_SITE:
 		expr = ctx.factory.QualifiedName(ctx.tokenString(), ctx.locator, ctx.tokenStartPos, ctx.Pos()-ctx.tokenStartPos)
 		ctx.nextToken()
 		if ctx.currentToken == TOKEN_LP {
@@ -814,10 +818,16 @@ func (ctx *context) atomExpression() (expr Expression) {
 		}
 
 	case TOKEN_PLAN:
-		expr = ctx.planDefinition()
+		expr = ctx.planDefinition(false)
+
+	case TOKEN_ACTOR:
+		expr = ctx.planDefinition(true)
+
+	case TOKEN_ACTION:
+		expr = ctx.functionDefinition(true)
 
 	case TOKEN_FUNCTION:
-		expr = ctx.functionDefinition()
+		expr = ctx.functionDefinition(false)
 
 	case TOKEN_NODE:
 		expr = ctx.nodeDefinition()
@@ -973,8 +983,11 @@ func (ctx *context) resourceExpression(start int, first Expression, form Resourc
 			ops := ctx.attributeOperations()
 			expr = ctx.factory.ResourceOverride(form, first, ops, ctx.locator, start, ctx.Pos()-start)
 		default:
-			ctx.SetPos(first.ByteOffset())
-			panic(ctx.parseIssue(PARSE_INVALID_RESOURCE))
+			// Obviously not a resource statement. Divide into two statements by resetting the position
+			// to start of body and returning the first. The second is probably a literal hash
+			ctx.SetPos(bodiesStart)
+			ctx.setToken(TOKEN_LC)
+			return first
 		}
 	} else {
 		bodies := ctx.resourceBodies(firstTitle)
@@ -1267,7 +1280,7 @@ func (ctx *context) arguments() (result []Expression) {
 	return ctx.joinHashEntries(ctx.expressions(TOKEN_RP, ctx.argument))
 }
 
-func (ctx *context) functionDefinition() Expression {
+func (ctx *context) functionDefinition(action bool) Expression {
 	start := ctx.tokenStartPos
 	ctx.nextToken()
 	var name string
@@ -1294,7 +1307,7 @@ func (ctx *context) functionDefinition() Expression {
 	return ctx.addDefinition(ctx.factory.Function(name, parameterList, block, returnType, ctx.locator, start, ctx.Pos()-start))
 }
 
-func (ctx *context) planDefinition() Expression {
+func (ctx *context) planDefinition(actor bool) Expression {
 	start := ctx.tokenStartPos
 	ctx.nextToken()
 	var name string
@@ -1325,7 +1338,7 @@ func (ctx *context) planDefinition() Expression {
 
 	// Pop namestack
 	ctx.nameStack = ctx.nameStack[:len(ctx.nameStack)-1]
-	return ctx.addDefinition(ctx.factory.Plan(name, parameterList, block, returnType, ctx.locator, start, ctx.Pos()-start))
+	return ctx.addDefinition(ctx.factory.Plan(name, parameterList, block, returnType, actor, ctx.locator, start, ctx.Pos()-start))
 }
 
 func (ctx *context) nodeDefinition() Expression {
