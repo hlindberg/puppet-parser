@@ -29,6 +29,8 @@ const (
 
 	PARSE_CLASS_NOT_VALID_HERE              = `PARSE_CLASS_NOT_VALID_HERE`
 	PARSE_ELSIF_IN_UNLESS                   = `PARSE_ELSIF_IN_UNLESS`
+	PARSE_EXPECTED_ACTION_NAME              = `PARSE_EXPECTED_ACTION_NAME`
+	PARSE_EXPECTED_ACTION_STYLE             = `PARSE_EXPECTED_ACTION_STYLE`
 	PARSE_EXPECTED_ATTRIBUTE_NAME           = `PARSE_EXPECTED_ATTRIBUTE_NAME`
 	PARSE_EXPECTED_CLASS_NAME               = `PARSE_EXPECTED_CLASS_NAME`
 	PARSE_EXPECTED_FARROW_AFTER_KEY         = `PARSE_EXPECTED_FARROW_AFTER_KEY`
@@ -77,6 +79,8 @@ func init() {
 
 	issue.Hard(PARSE_CLASS_NOT_VALID_HERE, `'class' keyword not allowed at this location`)
 	issue.Hard(PARSE_ELSIF_IN_UNLESS, `elsif not supported in unless expression`)
+	issue.Hard(PARSE_EXPECTED_ACTION_NAME, `expected action name`)
+	issue.Hard(PARSE_EXPECTED_ACTION_STYLE, `expected action style`)
 	issue.Hard(PARSE_EXPECTED_ATTRIBUTE_NAME, `expected attribute name`)
 	issue.Hard(PARSE_EXPECTED_CLASS_NAME, `expected name of class`)
 	issue.Hard(PARSE_EXPECTED_FARROW_AFTER_KEY, `expected '=>' to follow hash key`)

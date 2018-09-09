@@ -390,7 +390,7 @@ func (ctx *context) hashEntry() (expr Expression) {
 
 func (ctx *context) handleKeyword(next func() Expression) (expr Expression) {
 	switch ctx.currentToken {
-	case TOKEN_TYPE, TOKEN_FUNCTION, TOKEN_PLAN, TOKEN_ACTION, TOKEN_ACTOR, TOKEN_APPLICATION, TOKEN_CONSUMES, TOKEN_PRODUCES, TOKEN_SITE:
+	case TOKEN_TYPE, TOKEN_FUNCTION, TOKEN_PLAN, TOKEN_ACTOR, TOKEN_APPLICATION, TOKEN_CONSUMES, TOKEN_PRODUCES, TOKEN_SITE:
 		expr = ctx.factory.QualifiedName(ctx.tokenString(), ctx.locator, ctx.tokenStartPos, ctx.Pos()-ctx.tokenStartPos)
 		ctx.nextToken()
 		if ctx.currentToken == TOKEN_LP {
@@ -818,16 +818,13 @@ func (ctx *context) atomExpression() (expr Expression) {
 		}
 
 	case TOKEN_PLAN:
-		expr = ctx.planDefinition(false)
+		expr = ctx.planDefinition()
 
 	case TOKEN_ACTOR:
-		expr = ctx.planDefinition(true)
-
-	case TOKEN_ACTION:
-		expr = ctx.functionDefinition(true)
+		expr = ctx.actorDefinition()
 
 	case TOKEN_FUNCTION:
-		expr = ctx.functionDefinition(false)
+		expr = ctx.functionDefinition()
 
 	case TOKEN_NODE:
 		expr = ctx.nodeDefinition()
@@ -1078,21 +1075,33 @@ func (ctx *context) attributeOperation() (op Expression) {
 	}
 }
 
-func (ctx *context) attributeName() (name string) {
+func (ctx *context) attributeName() string {
+	if name, ok := ctx.identifier(); ok {
+		return name
+	}
+	panic(ctx.parseIssue(PARSE_EXPECTED_ATTRIBUTE_NAME))
+}
+
+func (ctx *context) identifier() (string, bool) {
 	switch ctx.currentToken {
 	case TOKEN_IDENTIFIER:
-		name = ctx.tokenString()
+		name := ctx.tokenString()
 		ctx.nextToken()
-		return
+		return name, true
 	default:
 		if word, ok := ctx.keyword(); ok {
-			name = word
 			ctx.nextToken()
-			return
+			return word, ok
 		}
 		ctx.SetPos(ctx.tokenStartPos)
-		panic(ctx.parseIssue(PARSE_EXPECTED_ATTRIBUTE_NAME))
+		return ``, false
 	}
+}
+
+func (ctx *context) attributeNameExpression() Expression {
+	start := ctx.tokenStartPos
+	name := ctx.attributeName()
+	return ctx.factory.QualifiedName(name, ctx.locator, start, ctx.Pos()-start)
 }
 
 func (ctx *context) collectExpression(lhs Expression) Expression {
@@ -1280,7 +1289,175 @@ func (ctx *context) arguments() (result []Expression) {
 	return ctx.joinHashEntries(ctx.expressions(TOKEN_RP, ctx.argument))
 }
 
-func (ctx *context) functionDefinition(action bool) Expression {
+func (ctx *context) actionStyle() string {
+	switch ctx.currentToken {
+	case TOKEN_IDENTIFIER, TOKEN_ACTOR, TOKEN_FUNCTION:
+		return ctx.tokenString()
+	}
+	ctx.SetPos(ctx.tokenStartPos)
+	panic(ctx.parseIssue(PARSE_EXPECTED_ACTION_NAME))
+}
+
+func (ctx *context) multiActionDefinition(start int, name string) Expression {
+	// Expect lambda parameter list for the iteration variable(s)
+	ctx.assertToken(TOKEN_VARIABLE)
+	iterVars := make([]Expression, 0)
+	iterVars = append(iterVars, ctx.atomExpression())
+	if ctx.currentToken == TOKEN_VARIABLE {
+		// Two variables, key, value
+		iterVars = append(iterVars, ctx.atomExpression())
+	}
+	ctx.assertToken(TOKEN_IN)
+	ctx.nextToken()
+
+	iterParams := make([]Expression, 0)
+	iterParams = append(iterParams, ctx.parameter())
+	if ctx.currentToken == TOKEN_COMMA {
+		// Two parameters, min - max
+		ctx.nextToken()
+		iterParams = append(iterParams, ctx.parameter())
+	}
+
+	return ctx.addDefinition(ctx.factory.MultiAction(ctx.qualifiedName(name), iterParams, iterVars, ctx.actionDefinition(name).(*ActionDefinition), ctx.locator, start, ctx.Pos()-start))
+}
+
+func (ctx *context) actorDefinition() Expression {
+	start := ctx.Pos()
+	ctx.nextToken()
+	return ctx.styledActionDefinition(ctx.actionName(), start, `actor`)
+}
+
+func (ctx *context) actionDefinition(name string) Expression {
+	start := ctx.Pos()
+	style := ctx.actionStyle()
+	ctx.nextToken()
+	return ctx.styledActionDefinition(name, start, style)
+}
+
+
+func (ctx *context) namedActionEntry() Expression {
+	key := ctx.actionName()
+	if ctx.currentToken != TOKEN_FARROW {
+		panic(ctx.parseIssue(PARSE_EXPECTED_FARROW_AFTER_KEY))
+	}
+	ctx.nextToken()
+	return ctx.actionDefinition(key)
+}
+
+func (ctx *context) styledActionDefinition(name string, start int, style string) Expression {
+	typeName := ``
+	switch style {
+	case `for`:
+		return ctx.multiActionDefinition(start, name)
+	case `actor`:
+		// Push to namestack
+		ctx.nameStack = append(ctx.nameStack, name)
+	case `resource`:
+		// Resource might have a second name that denotes the actual resource type.
+		if tn, ok := ctx.identifier(); ok {
+			typeName = ctx.qualifiedName(tn)
+		}
+	}
+
+	parameterList := ctx.parameterList()
+
+	var returnType, block Expression
+	if ctx.currentToken == TOKEN_RSHIFT {
+		ctx.nextToken()
+		if style == `resource` || style == `actor` {
+			// inferred short forms containing names only
+			switch ctx.currentToken {
+			case TOKEN_LC:
+				returnType = ctx.inferredStructType()
+			case TOKEN_LB:
+				returnType = ctx.inferredTupleType()
+			default:
+				returnType = ctx.parameterType()
+			}
+		} else {
+			returnType = ctx.parameterType()
+		}
+	}
+
+	blockStart := ctx.tokenStartPos
+	ctx.assertToken(TOKEN_LC)
+	ctx.nextToken()
+	switch style {
+	case `actor`:
+		// Code block must be a hash of actions
+		actions := ctx.expressions(TOKEN_RC, ctx.namedActionEntry)
+		block = ctx.factory.Block(actions, ctx.locator, blockStart, ctx.Pos()-blockStart)
+		ctx.nameStack = ctx.nameStack[:len(ctx.nameStack)-1]
+	case `resource`:
+		// Not a code block. This must be a hash
+		block = ctx.factory.Hash(ctx.hashExpression(), ctx.locator, blockStart, ctx.Pos()-blockStart)
+	default:
+		stmts := ctx.expressions(TOKEN_RC, ctx.expression)
+		block = ctx.factory.Block(stmts, ctx.locator, blockStart, ctx.Pos()-blockStart)
+	}
+
+	return ctx.addDefinition(ctx.factory.Action(ctx.qualifiedName(name), typeName, style, parameterList, block, returnType, ctx.locator, start, ctx.Pos()-start))
+}
+
+func (ctx *context) inferredStructType() Expression {
+	start := ctx.tokenStartPos
+	ctx.nextToken()
+	exprs := ctx.expressions(TOKEN_RC, ctx.attributeNameExpression)
+	l := ctx.locator
+	f := ctx.factory
+	v := f.Variable(f.QualifiedName(`r`, l, 0, 0), l, 0, 0)
+	for i, qn := range exprs {
+		s := qn.ByteOffset()
+		n := qn.ByteLength()
+		exprs[i] = f.KeyedEntry(qn,
+			f.Access(f.QualifiedReference(`TypeReference`, l, s, n),
+			[]Expression{f.NamedAccess(v, qn, l, s, n)}, l, s, n), l, s, n)
+	}
+	return f.Access(f.QualifiedReference(`Struct`, l, 0, 0), []Expression{f.Hash(exprs, ctx.locator, start, ctx.Pos() - start)}, l, start, ctx.Pos() - start)
+}
+
+func (ctx *context) nameOrInferredType() Expression {
+	switch ctx.currentToken {
+	case TOKEN_LC:
+		return ctx.inferredStructType()
+	case TOKEN_LB:
+		return ctx.inferredTupleType()
+	default:
+		return ctx.attributeNameExpression()
+	}
+}
+
+func (ctx *context) inferredTupleType() Expression {
+	start := ctx.tokenStartPos
+	ctx.nextToken()
+	exprs := ctx.expressions(TOKEN_RB, ctx.nameOrInferredType)
+	l := ctx.locator
+	f := ctx.factory
+	v := f.Variable(f.QualifiedName(`r`, l, 0, 0), l, 0, 0)
+	for i, expr := range exprs {
+		if qn, ok := expr.(*QualifiedName); ok {
+			s := qn.ByteOffset()
+			n := qn.ByteLength()
+			exprs[i] = f.KeyedEntry(qn,
+				f.Access(f.QualifiedReference(`TypeReference`, l, s, n),
+					[]Expression{f.NamedAccess(v, qn, l, s, n)}, l, s, n), l, s, n)
+		}
+	}
+	return f.Access(f.QualifiedReference(`Tuple`, l, 0, 0), exprs, l, start, ctx.Pos() - start)
+}
+
+func (ctx *context) actionBlock(style string) (parameterList []Expression, returnType, block Expression) {
+	return
+}
+
+func (ctx *context) actionName() string {
+	if name, ok := ctx.identifier(); ok {
+		return name
+	}
+	panic(ctx.parseIssue(PARSE_EXPECTED_ACTION_NAME))
+}
+
+func (ctx *context) functionDefinition() Expression {
 	start := ctx.tokenStartPos
 	ctx.nextToken()
 	var name string
@@ -1307,7 +1484,7 @@ func (ctx *context) functionDefinition(action bool) Expression {
 	return ctx.addDefinition(ctx.factory.Function(name, parameterList, block, returnType, ctx.locator, start, ctx.Pos()-start))
 }
 
-func (ctx *context) planDefinition(actor bool) Expression {
+func (ctx *context) planDefinition() Expression {
 	start := ctx.tokenStartPos
 	ctx.nextToken()
 	var name string
@@ -1338,7 +1515,7 @@ func (ctx *context) planDefinition(actor bool) Expression {
 
 	// Pop namestack
 	ctx.nameStack = ctx.nameStack[:len(ctx.nameStack)-1]
-	return ctx.addDefinition(ctx.factory.Plan(name, parameterList, block, returnType, actor, ctx.locator, start, ctx.Pos()-start))
+	return ctx.addDefinition(ctx.factory.Plan(name, parameterList, block, returnType, ctx.locator, start, ctx.Pos()-start))
 }
 
 func (ctx *context) nodeDefinition() Expression {

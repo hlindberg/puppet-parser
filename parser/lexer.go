@@ -127,31 +127,30 @@ const (
 	TOKEN_TYPE_NAME           = 159
 
 	// Keywords
-	TOKEN_ACTION      = 200
-	TOKEN_ACTOR       = 201
-	TOKEN_AND         = 202
-	TOKEN_APPLICATION = 203
-	TOKEN_ATTR        = 204
-	TOKEN_CASE        = 205
-	TOKEN_CLASS       = 206
-	TOKEN_CONSUMES    = 207
-	TOKEN_DEFAULT     = 208
-	TOKEN_DEFINE      = 209
-	TOKEN_FUNCTION    = 210
-	TOKEN_IF          = 211
-	TOKEN_IN          = 212
-	TOKEN_INHERITS    = 213
-	TOKEN_ELSE        = 214
-	TOKEN_ELSIF       = 215
-	TOKEN_NODE        = 216
-	TOKEN_OR          = 217
-	TOKEN_PLAN        = 218
-	TOKEN_PRIVATE     = 219
-	TOKEN_PRODUCES    = 220
-	TOKEN_SITE        = 221
-	TOKEN_TYPE        = 222
-	TOKEN_UNDEF       = 223
-	TOKEN_UNLESS      = 224
+	TOKEN_ACTOR       = 200
+	TOKEN_AND         = 201
+	TOKEN_APPLICATION = 202
+	TOKEN_ATTR        = 203
+	TOKEN_CASE        = 204
+	TOKEN_CLASS       = 205
+	TOKEN_CONSUMES    = 206
+	TOKEN_DEFAULT     = 207
+	TOKEN_DEFINE      = 208
+	TOKEN_FUNCTION    = 209
+	TOKEN_IF          = 210
+	TOKEN_IN          = 211
+	TOKEN_INHERITS    = 212
+	TOKEN_ELSE        = 213
+	TOKEN_ELSIF       = 214
+	TOKEN_NODE        = 215
+	TOKEN_OR          = 216
+	TOKEN_PLAN        = 217
+	TOKEN_PRIVATE     = 218
+	TOKEN_PRODUCES    = 219
+	TOKEN_SITE        = 220
+	TOKEN_TYPE        = 221
+	TOKEN_UNDEF       = 222
+	TOKEN_UNLESS      = 223
 )
 
 func IsKeywordToken(token int) bool {
@@ -250,7 +249,6 @@ var tokenMap = map[int]string{
 	TOKEN_TYPE_NAME:           `type name`,
 
 	// Keywords
-	TOKEN_ACTION:      `action`,
 	TOKEN_ACTOR:       `actor`,
 	TOKEN_AND:         `and`,
 	TOKEN_APPLICATION: `application`,
@@ -278,7 +276,6 @@ var tokenMap = map[int]string{
 }
 
 var keywords = map[string]int{
-	tokenMap[TOKEN_ACTION]:      TOKEN_ACTION,
 	tokenMap[TOKEN_ACTOR]:       TOKEN_ACTOR,
 	tokenMap[TOKEN_APPLICATION]: TOKEN_APPLICATION,
 	tokenMap[TOKEN_AND]:         TOKEN_AND,
@@ -639,7 +636,7 @@ func (ctx *context) nextToken() {
 					pos := ctx.Pos()
 					n, _ := ctx.skipWhite(false)
 					ctx.SetPos(pos)
-					if n == '{' || n == '>' || ctx.eppMode && (n == '%' || n == '-') {
+					if n == '{' || n == '>' || isLowercaseLetter(n) || ctx.eppMode && (n == '%' || n == '-') {
 						// A lambda parameter list cannot start with either of these tokens so
 						// this must be the end (next is either block body or block return type declaration)
 						ctx.setToken(TOKEN_PIPE_END)
@@ -950,10 +947,6 @@ func (ctx *context) consumeQualifiedName(start int, token int) {
 				return
 			case TOKEN_PLAN:
 				if ctx.tasks {
-					token = kwToken
-				}
-			case TOKEN_ACTION:
-				if ctx.actors {
 					token = kwToken
 				}
 			case TOKEN_ACTOR:

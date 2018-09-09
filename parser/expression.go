@@ -254,9 +254,21 @@ type (
 		returnType Expression
 	}
 
+	ActionDefinition struct {
+		FunctionDefinition
+		typeName string
+		style string
+	}
+
+	MultiActionDefinition struct {
+		ActionDefinition
+		name string
+		iterParams []Expression
+		iterVars []Expression
+	}
+
 	PlanDefinition struct {
 		FunctionDefinition
-		actor bool
 	}
 
 	HeredocExpression struct {
@@ -712,6 +724,74 @@ func (e *AccessExpression) ToPN() pn.PN {
 	return pn.List(append(pnMapArgs(e.Operand()), pnMap(e.Keys())...)).AsCall(`access`)
 }
 
+func (a *ActionDefinition) AllContents(path []Expression, visitor PathVisitor) {
+	DeepVisit(a, path, visitor, a.parameters, a.returnType, a.body)
+}
+
+func (a *ActionDefinition) Contents(path []Expression, visitor PathVisitor) {
+	ShallowVisit(a, path, visitor, a.parameters, a.returnType, a.body)
+}
+
+func (a *ActionDefinition) Style() string {
+	return a.style
+}
+
+func (a *ActionDefinition) ToDefinition() Definition {
+	return a
+}
+
+func (a *ActionDefinition) ToPN() pn.PN {
+	entries := a.definitionPN()
+	if a.typeName != `` {
+		entries = append(entries, pn.Literal(a.typeName).WithName(`type-name`))
+	}
+	entries = append(entries, pn.Literal(a.style).WithName(`style`))
+	if a.returnType != nil {
+		entries = append(entries, a.returnType.ToPN().WithName(`returns`))
+	}
+	return pn.Map(entries).AsCall(`action`)
+}
+
+func (a *ActionDefinition) TypeName() string {
+	return a.typeName
+}
+
+func (a *MultiActionDefinition) AllContents(path []Expression, visitor PathVisitor) {
+	DeepVisit(a, path, visitor, a.parameters, a.returnType, a.body, a.iterParams, a.iterVars)
+}
+
+func (a *MultiActionDefinition) Contents(path []Expression, visitor PathVisitor) {
+	ShallowVisit(a, path, visitor, a.parameters, a.returnType, a.body, a.iterParams, a.iterVars)
+}
+
+func (a *MultiActionDefinition) Name() string {
+	return a.name
+}
+
+func (a *MultiActionDefinition) InnerName() string {
+	return a.ActionDefinition.Name()
+}
+
+func (a *MultiActionDefinition) IterationParams() []Expression {
+	return a.iterParams
+}
+
+func (a *MultiActionDefinition) IterationVariables() []Expression {
+	return a.iterVars
+}
+
+func (a *MultiActionDefinition) ToDefinition() Definition {
+	return a
+}
+
+func (a *MultiActionDefinition) ToPN() pn.PN {
+	entries := make([]pn.Entry, 0, 3)
+	entries = append(entries, a.ActionDefinition.ToPN().AsParameters()[0].WithName(`action`))
+	entries = append(entries, pnList(a.iterParams).WithName(`iter`))
+	entries = append(entries, pnList(a.iterVars).WithName(`var`))
+	return pn.Map(entries).AsCall(`multiaction`)
+}
+
 func (e *AndExpression) AllContents(path []Expression, visitor PathVisitor) {
 	DeepVisit(e, path, visitor, e.lhs, e.rhs)
 }
@@ -738,7 +818,9 @@ func (e *Application) ToDefinition() Definition {
 	return e
 }
 
-func (e *Application) ToPN() pn.PN { return e.definitionPN(`application`, ``, nil) }
+func (e *Application) ToPN() pn.PN {
+	return pn.Map(e.definitionPN()).AsCall(`application`)
+}
 
 func (e *ArithmeticExpression) AllContents(path []Expression, visitor PathVisitor) {
 	DeepVisit(e, path, visitor, e.lhs, e.rhs)
@@ -1086,11 +1168,11 @@ func (e *FunctionDefinition) ReturnType() Expression {
 }
 
 func (e *FunctionDefinition) AllContents(path []Expression, visitor PathVisitor) {
-	DeepVisit(e, path, visitor, e.parameters, e.body)
+	DeepVisit(e, path, visitor, e.parameters, e.returnType, e.body)
 }
 
 func (e *FunctionDefinition) Contents(path []Expression, visitor PathVisitor) {
-	ShallowVisit(e, path, visitor, e.parameters, e.body)
+	ShallowVisit(e, path, visitor, e.parameters, e.returnType, e.body)
 }
 
 func (e *FunctionDefinition) ToDefinition() Definition {
@@ -1098,7 +1180,11 @@ func (e *FunctionDefinition) ToDefinition() Definition {
 }
 
 func (e *FunctionDefinition) ToPN() pn.PN {
-	return e.definitionPN(`function`, ``, e.returnType)
+	entries := e.definitionPN()
+	if e.returnType != nil {
+		entries = append(entries, e.returnType.ToPN().WithName(`returns`))
+	}
+	return pn.Map(entries).AsCall(`function`)
 }
 
 func (e *HeredocExpression) Syntax() string {
@@ -1143,7 +1229,11 @@ func (e *HostClassDefinition) ToDefinition() Definition {
 }
 
 func (e *HostClassDefinition) ToPN() pn.PN {
-	return e.definitionPN(`class`, e.parentClass, nil)
+	entries := e.definitionPN()
+	if e.parentClass != `` {
+		entries = append(entries, pn.Literal(e.parentClass).WithName(`parent`))
+	}
+	return pn.Map(entries).AsCall(`class`)
 }
 
 func (e *IfExpression) Test() Expression {
@@ -1573,16 +1663,12 @@ func (e *ParenthesizedExpression) ToUnaryExpression() UnaryExpression {
 
 func (e *ParenthesizedExpression) ToPN() pn.PN { return pn.Call(`paren`, e.Expr().ToPN()) }
 
-func (e *PlanDefinition) Actor() bool {
-	return e.actor
-}
-
 func (e *PlanDefinition) ToPN() pn.PN {
-	n := `plan`
-	if e.actor {
-		n = `actor`
+	entries := e.definitionPN()
+	if e.returnType != nil {
+		entries = append(entries, e.returnType.ToPN().WithName(`returns`))
 	}
-	return e.definitionPN(n, ``, e.returnType)
+	return pn.Map(entries).AsCall(`plan`)
 }
 
 func (e *Program) Definitions() []Definition {
@@ -1847,7 +1933,8 @@ func (e *ResourceTypeDefinition) ToDefinition() Definition {
 	return e
 }
 
-func (e *ResourceTypeDefinition) ToPN() pn.PN { return e.definitionPN(`define`, ``, nil) }
+func (e *ResourceTypeDefinition) ToPN() pn.PN { return pn.Map(e.definitionPN()).AsCall(`define`)
+}
 
 func (e *SelectorEntry) Matching() Expression {
 	return e.matching
@@ -2103,22 +2190,16 @@ func (e *IfExpression) pnIf(name string) pn.PN {
 	return pn.Map(entries).AsCall(name)
 }
 
-func (e *namedDefinition) definitionPN(typeName string, parent string, returnType Expression) pn.PN {
+func (e *namedDefinition) definitionPN() []pn.Entry {
 	entries := make([]pn.Entry, 0, 3)
 	entries = append(entries, pn.Literal(e.Name()).WithName(`name`))
-	if parent != `` {
-		entries = append(entries, pn.Literal(parent).WithName(`parent`))
-	}
 	if len(e.Parameters()) > 0 {
 		entries = append(entries, parametersEntry(e.Parameters()))
 	}
 	if e.Body() != nil {
 		entries = append(entries, pnBlockAsEntry(`body`, e.Body()))
 	}
-	if returnType != nil {
-		entries = append(entries, returnType.ToPN().WithName(`returns`))
-	}
-	return pn.Map(entries).AsCall(typeName)
+	return entries
 }
 
 func parametersEntry(parameters []Expression) pn.Entry {

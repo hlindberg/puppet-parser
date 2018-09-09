@@ -4,6 +4,7 @@ import "strings"
 
 type ExpressionFactory interface {
 	Access(operand Expression, keys []Expression, locator *Locator, offset int, length int) Expression
+	Action(name, typeName, style string, parameters []Expression, body Expression, returnType Expression, locator *Locator, offset int, length int) Expression
 	And(lhs Expression, rhs Expression, locator *Locator, offset int, length int) Expression
 	Application(name string, params []Expression, body Expression, locator *Locator, offset int, length int) Expression
 	Array(expressions []Expression, locator *Locator, offset int, length int) Expression
@@ -35,6 +36,7 @@ type ExpressionFactory interface {
 	KeyedEntry(key Expression, value Expression, locator *Locator, offset int, length int) Expression
 	Lambda(parameters []Expression, body Expression, returnType Expression, locator *Locator, offset int, length int) Expression
 	Match(op string, lhs Expression, rhs Expression, locator *Locator, offset int, length int) Expression
+	MultiAction(name string, iterParams, iterVars []Expression, action *ActionDefinition, locator *Locator, offset int, length int) Expression
 	NamedAccess(lhs Expression, rhs Expression, locator *Locator, offset int, length int) Expression
 	Negate(expr Expression, locator *Locator, offset int, length int) Expression
 	Node(hostnames []Expression, parent Expression, statements Expression, locator *Locator, offset int, length int) Expression
@@ -43,7 +45,7 @@ type ExpressionFactory interface {
 	Or(lhs Expression, rhs Expression, locator *Locator, offset int, length int) Expression
 	Parameter(name string, expr Expression, typeExpr Expression, capturesRest bool, locator *Locator, offset int, length int) Expression
 	Parenthesized(expr Expression, locator *Locator, offset int, length int) Expression
-	Plan(name string, parameters []Expression, body Expression, returnType Expression, actor bool, locator *Locator, offset int, length int) Expression
+	Plan(name string, parameters []Expression, body Expression, returnType Expression, locator *Locator, offset int, length int) Expression
 	Program(body Expression, definitions []Definition, locator *Locator, offset int, length int) Expression
 	QualifiedName(name string, locator *Locator, offset int, length int) Expression
 	QualifiedReference(name string, locator *Locator, offset int, length int) Expression
@@ -79,12 +81,16 @@ func DefaultFactory() ExpressionFactory {
 	return &defaultExpressionFactory{}
 }
 
-func (f *defaultExpressionFactory) And(lhs Expression, rhs Expression, locator *Locator, offset int, length int) Expression {
-	return &AndExpression{binaryExpression{Positioned{locator, offset, length}, lhs, rhs}}
-}
-
 func (f *defaultExpressionFactory) Access(operand Expression, keys []Expression, locator *Locator, offset int, length int) Expression {
 	return &AccessExpression{Positioned{locator, offset, length}, operand, keys}
+}
+
+func (f *defaultExpressionFactory) Action(name, typeName, style string, parameters []Expression, body Expression, returnType Expression, locator *Locator, offset int, length int) Expression {
+	return &ActionDefinition{FunctionDefinition{namedDefinition{Positioned{locator, offset, length}, name, parameters, body}, returnType}, typeName, style}
+}
+
+func (f *defaultExpressionFactory) And(lhs Expression, rhs Expression, locator *Locator, offset int, length int) Expression {
+	return &AndExpression{binaryExpression{Positioned{locator, offset, length}, lhs, rhs}}
 }
 
 func (f *defaultExpressionFactory) Application(name string, params []Expression, body Expression, locator *Locator, offset int, length int) Expression {
@@ -207,6 +213,10 @@ func (f *defaultExpressionFactory) Match(op string, lhs Expression, rhs Expressi
 	return &MatchExpression{binaryExpression{Positioned{locator, offset, length}, lhs, rhs}, op}
 }
 
+func (f *defaultExpressionFactory) MultiAction(name string, iterParams, iterVars []Expression, action *ActionDefinition, locator *Locator, offset int, length int) Expression {
+	return &MultiActionDefinition{*action, name, iterParams, iterVars}
+}
+
 func (f *defaultExpressionFactory) NamedAccess(lhs Expression, rhs Expression, locator *Locator, offset int, length int) Expression {
 	return &NamedAccessExpression{binaryExpression{Positioned{locator, offset, length}, lhs, rhs}}
 }
@@ -239,8 +249,8 @@ func (f *defaultExpressionFactory) Parenthesized(expr Expression, locator *Locat
 	return &ParenthesizedExpression{unaryExpression{Positioned{locator, offset, length}, expr}}
 }
 
-func (f *defaultExpressionFactory) Plan(name string, parameters []Expression, body Expression, returnType Expression, actor bool, locator *Locator, offset int, length int) Expression {
-	return &PlanDefinition{FunctionDefinition{namedDefinition{Positioned{locator, offset, length}, name, parameters, body}, returnType}, actor}
+func (f *defaultExpressionFactory) Plan(name string, parameters []Expression, body Expression, returnType Expression, locator *Locator, offset int, length int) Expression {
+	return &PlanDefinition{FunctionDefinition{namedDefinition{Positioned{locator, offset, length}, name, parameters, body}, returnType}}
 }
 
 func (f *defaultExpressionFactory) Program(body Expression, definitions []Definition, locator *Locator, offset int, length int) Expression {

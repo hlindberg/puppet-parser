@@ -742,16 +742,32 @@ func TestPlanDefintion(t *testing.T) {
 
 func TestActorDefintion(t *testing.T) {
 	expectDump(t, `actor foo { }`,
-		`(actor {:name "foo" :body []})`, PARSER_ACTORS_ENABLED)
+		`(action {:name "foo" :body [] :style "actor"})`, PARSER_ACTORS_ENABLED)
+
+	expectDump(t, `actor foo(String $a) >> Struct[b => String] { }`,
+		`(action {:name "foo" :params {:a {:type (qr "String")}} :body [] :style "actor" :returns (access (qr "Struct") (hash (=> (qn "b") (qr "String"))))})`,
+		PARSER_ACTORS_ENABLED)
+
+	expectDump(t, `actor foo >> { b } { }`,
+		`(action {:name "foo" :body [] :style "actor" :returns (access (qr "Struct") (hash (=> (qn "b") (access (qr "TypeReference") (. (var "r") (qn "b"))))))})`,
+		PARSER_ACTORS_ENABLED)
 
 	expectDump(t,
 		Unindent(`
       actor foo {
-        function first() {}
-        function second() {}
+        first => function() {},
+        second => function() {}
      }`),
-		`(actor {:name "foo" :body [(function {:name "first" :body []}) (function {:name "second" :body []})]})`,
+		`(action {:name "foo" :body [(action {:name "foo::first" :body [] :style "function"}) (action {:name "foo::second" :body [] :style "function"})] :style "actor"})`,
 		PARSER_ACTORS_ENABLED)
+}
+
+func TestMultiDefintion(t *testing.T) {
+	expectDump(t, `actor x { foo => for $n in $x function { } }`,
+		`(action {:name "x" :body [(multiaction {:action {:name "x::foo" :body [] :style "function"} :iter [(param {:name "x"})] :var [(var "n")]})] :style "actor"})`, PARSER_ACTORS_ENABLED)
+
+	expectDump(t, `actor x { foo => for $n in $x resource instance { } }`,
+		`(action {:name "x" :body [(multiaction {:action {:name "x::foo" :body [(hash)] :type-name "x::instance" :style "resource"} :iter [(param {:name "x"})] :var [(var "n")]})] :style "actor"})`, PARSER_ACTORS_ENABLED)
 }
 
 func TestNodeDefinition(t *testing.T) {
@@ -937,13 +953,13 @@ func TestClass(t *testing.T) {
 		Unindent(`
       class myclass inherits other {
       }`),
-		`(class {:name "myclass" :parent "other" :body []})`)
+		`(class {:name "myclass" :body [] :parent "other"})`)
 
 	expectDump(t,
 		Unindent(`
       class myclass inherits default {
       }`),
-		`(class {:name "myclass" :parent "default" :body []})`)
+		`(class {:name "myclass" :body [] :parent "default"})`)
 
 	expectDump(t,
 		Unindent(`
@@ -955,7 +971,7 @@ func TestClass(t *testing.T) {
 		Unindent(`
       class myclass($a, $b = 2) inherits other {
       }`),
-		`(class {:name "myclass" :parent "other" :params {:a {} :b {:value 2}} :body []})`)
+		`(class {:name "myclass" :params {:a {} :b {:value 2}} :body [] :parent "other"})`)
 
 	expectError(t,
 		Unindent(`
@@ -1708,12 +1724,6 @@ func TestResourceOverride(t *testing.T) {
 		`@File['/tmp/foo.txt'] { mode => '0644' }`,
 		`(resource-override {:resources (access (qr "File") "/tmp/foo.txt") :ops [(=> "mode" "0644")] :form "virtual"})`)
 
-}
-
-func TestInvalidResource(t *testing.T) {
-	expectError(t,
-		`'File' { mode => '0644' }`,
-		`invalid resource expression (line: 1, column: 1)`)
 }
 
 func TestVirtualResourceCollector(t *testing.T) {
